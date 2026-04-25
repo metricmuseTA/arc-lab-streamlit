@@ -1,0 +1,4 @@
+timestamp,event_type,endpoint,status,response_time_ms,cached,error
+2026-04-25T21:52:07.088552+00:00,auth,watttime/login,200,1052.7,False,
+2026-04-25T21:52:08.258911+00:00,forecast,watttime/v3/forecast,200,1164.3,False,
+2026-04-25T21:52:09.648844+00:00,ai_summary,anthropic/messages,error,1362.6,False,401 Client Error: Unauthorized for url: https://www.dataexpert.io/api/v1/anthropic/v1/messages
