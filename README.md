@@ -1,202 +1,151 @@
-# ARC LAB — Carbon Intelligence Dashboard
-**AI | Renewable | Consumption Laboratory**  
-**Metric Muse LLC · Tiffani Anderson**
+# ARC LAB — AI Renewable Consumption Laboratory
 
-[![Live App](https://img.shields.io/badge/Live%20App-arc--lab.streamlit.app-00E5FF?style=flat-square)](https://arc-lab.streamlit.app)
-[![GitHub](https://img.shields.io/badge/GitHub-metricmuseTA-FFD60A?style=flat-square)](https://github.com/metricmuseTA/arc-lab-streamlit)
+**Live App:** [arc-lab.streamlit.app](https://arc-lab.streamlit.app)
 
----
-
-## What This Is
-
-ARC LAB is a live, AI-powered carbon intelligence dashboard that answers one question in plain language: **what is the real environmental cost of using AI?**
-
-The dashboard pulls real-time carbon intensity data from the WattTime API for the California grid (CAISO_NORTH), visualizes a 24-hour forecast, and uses a LangChain + Claude AI layer to translate raw numbers into a plain-language summary and scheduling recommendation — when exactly to run your AI workloads today to minimize your carbon impact.
-
-Built as the AI Engineering Boot Camp capstone project (DataExpert.io, Spring 2026). Grounded in a Bronze-to-Gold Databricks medallion pipeline built during the Data Engineering Boot Camp.
+> Real-time carbon intelligence for the California grid — in plain language.
 
 ---
 
-## Live URL
+## The Finding
 
-**[https://arc-lab.streamlit.app](https://arc-lab.streamlit.app)**
+Scheduling AI workloads in hours 18–23 instead of hours 3–6 reduces carbon intensity from **972 lbs CO₂/MWh down to 57 lbs CO₂/MWh** — a **94% reduction** — on the CAISO_NORTH grid (California ISO).
 
-Auto-deploys from `main` branch on every push.
+This isn't a marginal improvement. It's the difference between running on mostly fossil fuels versus mostly renewables. The only variable is *when* you schedule the compute.
 
 ---
 
-## Architecture
+## What This Project Is
 
-```
-WattTime API /v3/forecast (JSON)
-        ↓
-Streamlit App (Python)
-        ↓                          ↓
-24-hr Forecast Chart         LangChain + Claude
-Best Window Algorithm        Plain-language summary
-(programmatic, not LLM)      Scheduling recommendation
-        ↓
-Historical Context Panel
-(data/carbon_snapshot.csv — Gold table snapshot)
-        ↓
-User — one page, no technical knowledge required
-```
+ARC LAB is an independent research initiative quantifying the carbon cost of AI workloads using public grid data. This capstone project builds a full Bronze → Silver → Gold medallion pipeline on Databricks using WattTime CAISO_NORTH carbon intensity data, with a live Streamlit app on top powered by LangChain and a RAG assistant.
 
-### Data Sources
-| Source | Role | Format |
-|---|---|---|
-| WattTime API v3 | Live carbon intensity — current + 24hr forecast | JSON |
-| Databricks Gold Table | Historical CAISO_NORTH hourly data | Delta (exported as CSV) |
+**Key components:**
+- Full medallion pipeline (Bronze → Silver → Gold) on Databricks
+- Gold table: `bootcamp_students.gold.carbon_intensity_hourly`
+- LLM-powered carbon forecasting via LangChain + Databricks Vector Search
+- RAG assistant for natural language queries about grid data
+- Token auto-refresh with Parquet fallback for resilience
+- Live deployed at [arc-lab.streamlit.app](https://arc-lab.streamlit.app)
 
-### Stack
-| Tool | Role |
+---
+
+## Stack
+
+| Layer | Technology |
 |---|---|
-| Streamlit | Web application framework |
-| Streamlit Community Cloud | Hosting + deployment |
-| WattTime API | Live grid carbon intensity data |
-| LangChain + Claude | AI plain-language summary |
-| Plotly | Interactive forecast chart |
-| Python | Primary language |
-| GitHub | Version control + auto-deploy trigger |
+| Data platform | Databricks (dbc-7b106152-caf3.cloud.databricks.com) |
+| Storage | Delta Lake |
+| Data source | WattTime API — CAISO_NORTH grid region |
+| Language | Python, Spark SQL |
+| LLM integration | LangChain (`databricks_langchain`) |
+| Vector Search | Databricks Vector Search (`zachy_vs` endpoint) |
+| RAG index | `bootcamp_students.zachy_ceresrain.bootcamp_docs_index` |
+| App framework | Streamlit |
+| Fallback | Parquet snapshot (`carbon_snapshot.csv`) |
 
 ---
 
-## Key Features
-
-- **Live carbon intensity** — real MOER values from WattTime, refreshed every 5 minutes
-- **24-hour forecast chart** — color coded green/yellow/red by carbon intensity level
-- **Programmatic scheduling algorithm** — finds the lowest-carbon 2-hour window using a rolling mean over 5-minute forecast bins. The LLM never computes the window — it only explains it.
-- **AI plain-language summary** — 3-sentence Claude response: what the reading means, how today compares, what to do
-- **Historical context** — compared against Gold table averages from the Data Engineering capstone
-- **Graceful fallbacks** — if WattTime or Claude fails, the app shows cached data and rule-based text rather than crashing
-- **Application logging** — every API call logged to `data/arc_lab_logs.csv` with timestamp, status, response time, and cache flag
-- **System health panel** — collapsible panel showing API status, error count, cache TTL
-
----
-
-## Data Quality
-
-- WattTime API responses cached at 5-minute TTL — prevents rate limit exposure
-- Auth token refreshed automatically on 401 without user impact
-- NaN and zero-value bins dropped before scheduling algorithm runs
-- Tie-breaking: earliest window wins when two windows have equal rolling mean
-- Forecast resolution: native 5-minute bins for scheduler, aggregated to hourly for chart display
-- AI summary cached by forecast hash — Claude is not called if forecast hasn't changed
-
-**Failure handling:**
-| Scenario | Behavior |
-|---|---|
-| WattTime API error | Shows last cached value with stale-data flag |
-| Incomplete forecast | Chart renders available data; scheduler skips if insufficient bins |
-| Claude API error | Rule-based fallback text renders instead |
-| Historical CSV missing | Historical panel suppressed silently |
-
----
-
-## Project Structure
+## Pipeline Architecture
 
 ```
-arc-lab-streamlit/
-├── app.py                    ← Main Streamlit application
-├── requirements.txt          ← Python dependencies
-├── data/
-│   ├── carbon_snapshot.csv   ← Gold table snapshot (historical context)
-│   └── arc_lab_logs.csv      ← Application logs (auto-generated)
-├── pages/                    ← Reserved for future multi-page expansion
-├── .streamlit/
-│   ├── config.toml           ← Streamlit configuration
-│   └── secrets.toml          ← Local secrets (gitignored)
-├── .gitignore
-├── LICENSE
-└── README.md
+WattTime API (CAISO_NORTH)
+        ↓
+Bronze — Raw ingestion into Delta Lake (no transformations)
+        ↓
+Silver — Timestamps normalized, nulls handled, schema enforced
+        ↓
+Gold   — carbon_intensity_hourly
+         Hourly averages, Optimal/Moderate/Avoid classifications
+         Weekday/weekend splits
+        ↓
+Streamlit App + LangChain RAG Assistant
 ```
 
 ---
 
-## Running Locally
+## Run Instructions
 
 ### Prerequisites
-- Python 3.10+
-- WattTime account (register at [watttime.org](https://watttime.org))
-- Anthropic API key or DataExpert.io proxy key
 
-### Setup
+- Python 3.9+
+- Databricks workspace access (or use the Parquet fallback)
+- WattTime API credentials (optional — fallback data included)
 
-**1. Clone the repo**
+### Local Setup
+
 ```bash
-git clone https://github.com/metricmuseTA/arc-lab-streamlit.git
-cd arc-lab-streamlit
-```
+# Clone the repo
+git clone https://github.com/metricmuseTA/arc-lab-carbon-pipeline
+cd arc-lab-carbon-pipeline
 
-**2. Install dependencies**
-```bash
+# Install dependencies
 pip install -r requirements.txt
-```
 
-**3. Configure secrets**
+# Set environment variables
+export DATABRICKS_HOST=https://dbc-7b106152-caf3.cloud.databricks.com
+export DATABRICKS_TOKEN=your_token_here
 
-Create `.streamlit/secrets.toml` (never commit this file):
-```toml
-[watttime]
-username = "your_watttime_username"
-password = "your_watttime_password"
-
-[anthropic]
-api_key = "your_anthropic_or_proxy_key"
-base_url = "https://api.anthropic.com"  # or your proxy URL
-```
-
-**4. Run the app**
-```bash
+# Run the Streamlit app
 streamlit run app.py
 ```
 
-App opens at `http://localhost:8501`
+The app will open at `http://localhost:8501`. If the Databricks connection is unavailable, it will automatically fall back to the included `carbon_snapshot.csv`.
+
+### Live App
+
+No setup required — the app is live at [arc-lab.streamlit.app](https://arc-lab.streamlit.app).
 
 ---
 
-## Deploying to Streamlit Community Cloud
+## Key Technical Workarounds
 
-1. Push repo to GitHub (public)
-2. Go to [share.streamlit.io](https://share.streamlit.io)
-3. Click **Create app** → select `metricmuseTA/arc-lab-streamlit`, branch `main`, file `app.py`
-4. Under **Advanced settings → Secrets**, paste your `secrets.toml` contents
-5. Click **Deploy** — auto-deploys on every push to `main`
+These are documented for reproducibility — specific to the Databricks bootcamp environment:
 
----
+```python
+# TIMESTAMP_NTZ epoch math — direct cast fails
+# ❌ col("ts_utc").cast("long")  → returns null
+# ✅ Correct:
+unix_timestamp(col("ts_utc").cast("timestamp"))
 
-## WattTime API Notes
+# LangChain import path for Databricks runtime
+# ❌ from langchain_community.chat_models import ChatDatabricks
+# ✅ Correct:
+from databricks_langchain import ChatDatabricks
 
-- Endpoint: `GET https://api.watttime.org/v3/forecast`
-- Auth: `GET https://api.watttime.org/login` with Basic auth → returns bearer token
-- Region: `CAISO_NORTH` (California)
-- Signal type: `co2_moer`
-- Token expiry: ~30 minutes (app refreshes automatically on 401)
-- Free tier: sufficient for this application's polling frequency
-
-**Attribution:** Data provided by [WattTime](https://www.watttime.org). MOER (Marginal Operating Emissions Rate) reflects the carbon intensity of the next unit of electricity added to the grid — not average grid emissions.
-
----
-
-## MOER Disclaimer
-
-Scheduling AI workloads during low-MOER windows reduces marginal emissions but does not guarantee net reductions under all grid conditions. MOER is a marginal signal, not an average emissions signal. Results reflect conditions in the CAISO_NORTH region only.
+# No INTERVAL syntax in Spark SQL — use epoch math
+# ❌ ts_utc >= current_timestamp() - INTERVAL 7 DAYS
+# ✅ Correct:
+ts_utc >= current_timestamp() - (7 * 86400)
+```
 
 ---
 
-## Related Repositories
+## Results
 
-- **Data Engineering Capstone (Bronze→Gold Pipeline):** [metricmuseTA/arc-lab-carbon-pipeline](https://github.com/metricmuseTA/arc-lab-carbon-pipeline)
+| Window | Avg CO₂ Intensity | Classification |
+|---|---|---|
+| Hours 18–23 (optimal) | 57 lbs CO₂/MWh | ✅ Optimal |
+| Hours 6–17 (moderate) | ~300 lbs CO₂/MWh | 🟡 Moderate |
+| Hours 3–6 (avoid) | 972 lbs CO₂/MWh | ❌ Avoid |
+
+**94% reduction** available by shifting AI compute from worst to best window.
+
+---
+
+## What's Next
+
+- Expanding beyond CAISO to other grid regions
+- Real-time scheduling recommendation API
+- OSV Fellowship submitted for research funding
 
 ---
 
 ## About ARC LAB
 
-ARC LAB (AI | Renewable | Consumption Laboratory) is a research initiative under Metric Muse LLC quantifying the carbon cost of AI workloads using public grid data. The independent, open, public positioning is a deliberate strategic moat — making AI energy data legible to everyone, not just developers and researchers.
+ARC LAB (AI Renewable Consumption Laboratory) is an independent research initiative building open, publicly accessible infrastructure to measure the carbon cost of AI workloads.
 
-*Tagline: Where AI energy data arcs toward insight.*
+The core thesis: AI's energy footprint is growing faster than our ability to measure it. ARC LAB is building the open infrastructure to change that.
 
 ---
 
-*Tiffani Anderson · Metric Muse LLC · La Mesa, CA*  
-*DataExpert.io AI Engineering Boot Camp · Spring 2026*
+*Built during the DataExpert.io Databricks Bootcamp, March–April 2026*
+*Tiffani Anderson · [Metric Muse](https://github.com/metricmuseTA) · La Mesa, CA*
